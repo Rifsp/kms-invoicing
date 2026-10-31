@@ -1,0 +1,30 @@
+# KMS Invoicing — reverse proxy Apache (port 8013)
+# http://103.25.223.5:8013/ -> gunicorn 127.0.0.1:8012
+# Static dilayani Apache langsung.
+#
+# ALUR AMAN:
+#   1. salin ke sites-available + symlink sites-enabled
+#   2. apache2ctl configtest  -> harus "Syntax OK"
+#   3. baru reload. Jika error, situs lain TIDAK terganggu.
+
+<VirtualHost *:8013>
+    ServerName 103.25.223.5
+
+    Alias /static/ /opt/kms-invoicing/staticfiles/
+    <Directory /opt/kms-invoicing/staticfiles>
+        Require all granted
+        Options -Indexes
+    </Directory>
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+    ProxyPass        /static/ !
+    ProxyPass        / http://127.0.0.1:8012/
+    ProxyPassReverse / http://127.0.0.1:8012/
+
+    RequestHeader set X-Forwarded-Proto "http"
+    LimitRequestBody 12582912
+
+    ErrorLog ${APACHE_LOG_DIR}/kms-invoicing-error.log
+    CustomLog ${APACHE_LOG_DIR}/kms-invoicing-access.log combined
+</VirtualHost>

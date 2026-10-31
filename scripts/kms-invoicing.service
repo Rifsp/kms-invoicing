@@ -1,22 +1,18 @@
 [Unit]
 Description=KMS Invoicing (Django + Gunicorn)
-Documentation=file:///home/rifsanserver/kms-invoicing/INSTALL-NOTES.md
+Documentation=file:///opt/kms-invoicing/INSTALL-NOTES.md
 After=network-online.target postgresql.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=rifsanserver
-Group=rifsanserver
-WorkingDirectory=/home/rifsanserver/kms-invoicing
+User=root
+Group=root
+WorkingDirectory=/opt/kms-invoicing
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONDONTWRITEBYTECODE=1"
-EnvironmentFile=/home/rifsanserver/kms-invoicing/.env.production
-ExecStart=/home/rifsanserver/kms-invoicing/.venv/bin/gunicorn config.wsgi:application \
-  --bind 127.0.0.1:8012 \
-  --workers 2 --threads 2 --timeout 90 --graceful-timeout 30 \
-  --access-logfile /home/rifsanserver/kms-invoicing/logs/gunicorn-access.log \
-  --error-logfile /home/rifsanserver/kms-invoicing/logs/gunicorn-error.log
+EnvironmentFile=/opt/kms-invoicing/.env.production
+ExecStart=/opt/kms-invoicing/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8012 --workers 2 --threads 2 --timeout 90 --graceful-timeout 30 --access-logfile /opt/kms-invoicing/logs/gunicorn-access.log --error-logfile /opt/kms-invoicing/logs/gunicorn-error.log
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=always
 RestartSec=5
