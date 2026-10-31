@@ -39,12 +39,18 @@ X_FRAME_OPTIONS = 'DENY'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 12 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 if not DEBUG:
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    # Default aman: cookie Secure + HSTS aktif. Untuk deploy TANPA TLS (mis. akses
+    # lewat IP/HTTP di jaringan internal), matikan eksplisit via .env:
+    #   SESSION_COOKIE_SECURE=0, CSRF_COOKIE_SECURE=0, SECURE_SSL_REDIRECT=0,
+    #   SECURE_HSTS_SECONDS=0
+    # Catatan: dengan cookie tidak-Secure, kredensial dikirim tanpa enkripsi —
+    # hanya layak di jaringan tepercaya / di belakang reverse proxy TLS.
+    SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', '1') == '1'
+    CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', '1') == '1'
     SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', '1') == '1'
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', '1') == '1'
+    SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', '1') == '1'
 
 # Bound bulk formsets allow up to 200 purchase rows.
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 2500
