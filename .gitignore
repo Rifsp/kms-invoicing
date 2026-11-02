@@ -9,3 +9,4 @@ private_uploads/
 *.zip
 .pytest_cache/
 .env.docker-backup
+backups/
