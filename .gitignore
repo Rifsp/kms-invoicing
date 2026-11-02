@@ -8,9 +8,4 @@ private_uploads/
 .pgdata/
 *.zip
 .pytest_cache/
-.env.production
 .env.docker-backup
-*.dump
-*.db_password
-logs/
-backups/

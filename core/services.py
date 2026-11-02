@@ -62,6 +62,8 @@ def invoice_profile(kind,partner=None):
 
 
 def issue_invoice(order, kind, issuer, recipient, total, today, supplier=None):
+    # Old office documents remain readable, but no new office invoice can be issued.
+    if kind=='kitchen':raise ValidationError('Invoice Dapur ke Kantor hanya tersedia sebagai arsip lama.')
     # Called within confirm_order's transaction; lock the profile before its counter.
     base=invoice_profile(kind)
     InvoiceProfile.objects.select_for_update().get(pk=base.pk)
@@ -90,10 +92,8 @@ def confirm_order(user, order_id):
         raise ValidationError('Pengadaan sudah dikonfirmasi.')
     items = list(order.items.select_related('product','supplier'))
     if not items: raise ValidationError('Tambahkan minimal satu barang.')
-    if any(i.kms_price <= 0 or i.cooperative_price <= 0 or i.kitchen_price <= 0 for i in items):
-        raise ValidationError('Lengkapi harga KMS, koperasi, dan harga kantor dapur sebelum konfirmasi.')
-    if any(i.kitchen_price < i.cooperative_price for i in items):
-        raise ValidationError('Harga ke kantor dapur tidak boleh di bawah harga beli dapur.')
+    if any(i.kms_price <= 0 or i.cooperative_price <= 0 for i in items):
+        raise ValidationError('Lengkapi harga KMS ke koperasi dan koperasi ke dapur sebelum konfirmasi.')
     for item in items:
         item.product_name, item.unit = item.product.name, item.product.unit
         item.save(update_fields=['product_name','unit'])
@@ -106,10 +106,10 @@ def confirm_order(user, order_id):
         issue_invoice(order,'supplier',supplier.name,'KMS',total,today,supplier=supplier)
     issue_invoice(order,'kms','KMS',order.cooperative.name,sum((i.kms_total for i in items),Decimal('0')),today)
     issue_invoice(order,'cooperative',order.cooperative.name,order.kitchen.name,sum((i.cooperative_total for i in items),Decimal('0')),today)
-    issue_invoice(order,'kitchen',order.kitchen.name,order.office_name,sum((i.kitchen_total for i in items),Decimal('0')),today)
+    order.flow_version='standard'
     order.report_snapshot = profile_snapshot(invoice_profile('procurement'))
     order.status, order.confirmed_at = Procurement.Status.CONFIRMED, timezone.now()
-    order.save(update_fields=['status','confirmed_at','report_snapshot'])
+    order.save(update_fields=['status','confirmed_at','report_snapshot','flow_version'])
     audit(user,'procurement.confirmed',order.code)
     return order
 
@@ -308,8 +308,8 @@ def save_sales_lines(user,order_id,formset,revision):
     for form in formset:
         data=form.cleaned_data;item=items[data['id']]
         item.kms_price=data['kms_price']
-        item.cooperative_price=data['cooperative_price'];item.kitchen_price=data['kitchen_price']
-        item.full_clean();item.save(update_fields=['kms_price','cooperative_price','kitchen_price'])
+        item.cooperative_price=data['cooperative_price']
+        item.full_clean();item.save(update_fields=['kms_price','cooperative_price'])
     order.revision+=1;order.save(update_fields=['revision'])
     audit(user,'procurement.sales_lines_saved',order.code,revision=order.revision)
     return order

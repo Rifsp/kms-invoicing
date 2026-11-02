@@ -46,6 +46,7 @@ class Procurement(Stamp):
     cancelled_at = models.DateTimeField(null=True, blank=True)
     cancellation_reason = models.CharField(max_length=300, blank=True)
     report_snapshot = models.JSONField(default=dict, blank=True)
+    flow_version = models.CharField(max_length=12,choices=[('standard','Sampai dapur'),('legacy','Arsip alur kantor')],default='standard')
     revision = models.PositiveIntegerField(default=0)
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     cooperative = models.ForeignKey(Partner, on_delete=models.PROTECT, related_name='cooperative_orders', limit_choices_to={'kind':'cooperative'})
@@ -57,6 +58,8 @@ class Procurement(Stamp):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     class Meta: ordering = ['-created_at']
+    @property
+    def has_office_stage(self): return self.flow_version=='legacy' and self.status!='draft'
     @property
     def code(self): return f'PGD-{self.pk:05d}'
     def __str__(self): return self.code
@@ -178,8 +181,11 @@ class AuditEvent(Stamp):
     class Meta: ordering = ['-created_at']
 
 
-SALES_KINDS = ['kms', 'cooperative', 'kitchen']
-INVOICE_KINDS = ['supplier'] + SALES_KINDS
+SALES_KINDS = ['kms', 'cooperative']
+LEGACY_SALES_KINDS = ['kitchen']
+INVOICE_KINDS = ['supplier'] + SALES_KINDS + LEGACY_SALES_KINDS
+ACTIVE_INVOICE_KINDS = ['supplier'] + SALES_KINDS
+ACTIVE_DOCUMENT_KINDS = ACTIVE_INVOICE_KINDS + ['procurement']
 DOCUMENT_KINDS = INVOICE_KINDS + ['procurement']
 def document_label(kind):
     return 'Laporan pengadaan' if kind == 'procurement' else Invoice.Kind(kind).label

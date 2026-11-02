@@ -46,8 +46,7 @@ document.querySelectorAll('select[data-search-kind]').forEach(enhanceSearchSelec
 const pricing=document.getElementById('item-pricing-form');
 function updatePricing(){
  if(!pricing)return;const qty=Number(pricing.elements.quantity.value)||0;
- for(const key of ['supplier_price','kms_price','cooperative_price','kitchen_price']){const target=document.querySelector('[data-preview="'+key+'"]');if(target)target.textContent=money(qty*(Number(pricing.elements[key].value)||0));}
- document.getElementById('kitchen-margin').textContent=money(qty*((Number(pricing.elements.kitchen_price.value)||0)-(Number(pricing.elements.cooperative_price.value)||0)));
+ for(const key of ['supplier_price','kms_price','cooperative_price']){const target=document.querySelector('[data-preview="'+key+'"]');if(target)target.textContent=money(qty*(Number(pricing.elements[key].value)||0));}
 }
 let offerController;
 async function loadOffers(){
@@ -131,7 +130,7 @@ if(purchaseForm){
  document.getElementById('close-supplier-picker').addEventListener('click',()=>picker.close());picker.addEventListener('close',()=>{pickerSerial++;});refreshPurchaseTotals();
 }
 const salesForm=document.getElementById('bulk-sales-form');
-if(salesForm){function refreshSalesTotals(){for(const key of ['kms_price','cooperative_price','kitchen_price']){let total=0;salesForm.querySelectorAll('[data-sales-row]').forEach(row=>{total+=(Number(row.dataset.quantity)||0)*(Number(row.querySelector('[name$="-'+key+'"]').value)||0);});salesForm.querySelector('[data-sales-total="'+key+'"]').textContent=money(total);}}salesForm.addEventListener('input',refreshSalesTotals);refreshSalesTotals();}
+if(salesForm){function refreshSalesTotals(){for(const key of ['kms_price','cooperative_price']){let total=0;salesForm.querySelectorAll('[data-sales-row]').forEach(row=>{total+=(Number(row.dataset.quantity)||0)*(Number(row.querySelector('[name$="-'+key+'"]').value)||0);});salesForm.querySelector('[data-sales-total="'+key+'"]').textContent=money(total);}}salesForm.addEventListener('input',refreshSalesTotals);refreshSalesTotals();}
 
 // Shared compact row actions stay outside the table to avoid clipped menus.
 const rowDialog=document.getElementById('row-action-dialog');

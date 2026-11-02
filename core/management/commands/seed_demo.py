@@ -34,8 +34,8 @@ class Command(BaseCommand):
         for supplier in suppliers:SupplierProduct.objects.get_or_create(product=egg,supplier=supplier)
         cash_movement(owner,'5000000','income',today,'Modal awal DEMO',uuid.uuid4())
         for idx in range(3):
-            order=Procurement.objects.create(cooperative=coop,kitchen=kitchen,office_name='Kantor Dapur Bandung',delivery_date=today+timedelta(days=idx),created_by=operator,notes='DATA CONTOH — bukan transaksi sebenarnya.')
-            OrderItem.objects.create(procurement=order,product=egg,supplier=suppliers[0],supplier_quote=quotes[0],quantity=100+idx*50,supplier_price=12000,kms_price=12500,cooperative_price=13000,kitchen_price=13500)
+            order=Procurement.objects.create(cooperative=coop,kitchen=kitchen,delivery_date=today+timedelta(days=idx),created_by=operator,notes='DATA CONTOH — bukan transaksi sebenarnya.')
+            OrderItem.objects.create(procurement=order,product=egg,supplier=suppliers[0],supplier_quote=quotes[0],quantity=100+idx*50,supplier_price=12000,kms_price=12500,cooperative_price=13000)
             if idx<2:
                 confirm_order(owner,order.pk)
                 supplier_invoice=order.invoices.get(kind='supplier')

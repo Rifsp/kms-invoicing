@@ -1,4 +1,4 @@
 {% load money %}<div class="stats">
 {% if is_owner %}<div class="stat"><span>Omzet KMS</span><strong class="money-value">{{ totals.kms_sales|rupiah_ringkas }}</strong><small>Profit selisih harga: {{ totals.kms_margin|rupiah_ringkas }}</small></div>{% endif %}
 <div class="stat"><span>Omzet koperasi</span><strong class="money-value">{{ totals.coop_sales|rupiah_ringkas }}</strong><small>Profit selisih harga: {{ totals.coop_margin|rupiah_ringkas }}</small></div>
-<div class="stat"><span>Omzet dapur → kantor dapur</span><strong class="money-value">{{ totals.kitchen_sales|rupiah_ringkas }}</strong><small>Profit dapur: {{ totals.kitchen_margin|rupiah_ringkas }}</small></div></div>
+</div>

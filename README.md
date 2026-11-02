@@ -1,126 +1,41 @@
-# KMS Management System — V1.6 · Tabel Ringkas, Status & Filter Bulanan
+# KMS Management System V1.7
 
-Aplikasi web Django + PostgreSQL untuk pengadaan dan invoicing Supplier → KMS → Koperasi → Dapur → Kantor dapur.
-Tampilan menggunakan Django Templates, HTMX, dan Tailwind CSS. Aset CSS dan HTMX sudah tersedia lokal sehingga tidak bergantung pada CDN.
+Aplikasi pengadaan dan invoicing dengan alur **Supplier → KMS → Koperasi → Dapur**. Pengadaan baru berhenti di dapur. Tidak ada input harga, penerbitan invoice, atau perhitungan profit baru untuk Dapur → Kantor.
 
-## Menjalankan di Windows / Linux dengan Docker
+Stack: Django 5.2, PostgreSQL, Django Templates, HTMX, Tailwind CSS, Gunicorn dan WhiteNoise. CSS hasil build sudah disertakan; Node.js hanya diperlukan jika mengubah CSS.
 
-Pasang Docker Desktop (Windows) atau Docker Engine + Compose (Linux). Ekstrak ZIP ini, lalu buka terminal di folder proyek.
+## Perubahan V1.7
 
-1. Buat konfigurasi dengan secret acak:
+- Input pengadaan tetap dua tabel: seluruh barang/supplier/harga beli, lalu harga KMS → koperasi dan koperasi → dapur.
+- Setelah Owner/Superadmin mengonfirmasi, terbit **satu tagihan untuk setiap supplier**, satu invoice KMS → koperasi, dan satu invoice koperasi → dapur. Dapur hanya mendapat satu invoice dari koperasi.
+- Laporan utama menghitung omzet/profit KMS dan koperasi. Tidak menganggap penerimaan barang dapur sebagai omzet dapur. Omzet/profit KMS tetap khusus Owner/Superadmin.
+- Ekspor pengadaan baru berhenti pada harga beli dapur dan total tagihan ke dapur. Kolom harga kantor, rekomendasi kantor dan profit dapur dihapus dari format baru.
+- Invoice kantor lama tersedia lewat **Invoice Penjualan → Arsip invoice kantor lama**. Nomor, kop, harga, pembayaran, bukti, sisa tagihan dan akses cetaknya tetap dipertahankan. Arsip masih dapat dilunasi atau dibatalkan oleh role yang berwenang.
+- Ekspor pengadaan lama mempertahankan format lama 13 kolom. Format baru memakai 11 kolom. Pengadaan baru tidak dapat menerbitkan invoice kantor, termasuk melalui fungsi penerbitan di server.
+- Hak admin operasional, kas, bukti, pembatalan, filter bulan, warna status dan tabel ringkas dari V1.6 tetap digunakan.
 
-   ```bash
-   python setup_local.py
-   ```
+## Persiapan Docker untuk instalasi baru
 
-   Jika perintah Python di Linux adalah `python3`, gunakan `python3 setup_local.py`.
-   Script tidak menimpa `.env` yang sudah ada.
-
-2. Bangun aplikasi dan PostgreSQL:
-
-   ```bash
-   docker compose up -d --build
-   docker compose exec web python manage.py migrate
-   docker compose exec web python manage.py setup_roles
-   docker compose exec web python manage.py collectstatic --noinput
-   docker compose exec web python manage.py createsuperuser
-   ```
-
-3. Buka http://localhost:8000 dan masuk menggunakan akun superuser tadi.
-
-4. Untuk akun admin operasional, buka http://localhost:8000/admin/ → Users → Add.
-   Tetapkan grup **Admin Operasional**. Tidak perlu mengaktifkan Staff status atau Superuser status.
-   Akun Owner biasa dapat dibuat dengan grup **Owner**.
-
-`docker compose down` menghentikan aplikasi. Data tetap berada di volume Docker.
-**Jangan gunakan `docker compose down -v` pada database berisi transaksi**, karena menghapus volume database dan lampiran.
-
-## Mencoba data contoh (opsional)
-
-Hanya jalankan pada database percobaan yang belum memiliki pengadaan dan akun bernama owner / operasional:
+Pasang Docker Engine/Desktop dan Compose. Ekstrak paket, masuk ke folder yang memuat `manage.py` dan `compose.yaml`, kemudian:
 
 ```bash
-docker compose exec -e KMS_DEMO_PASSWORD=GantiPasswordDemoMinimal12Karakter web python manage.py seed_demo
+python setup_local.py
+docker compose up -d --build db
+docker compose build web
+docker compose run --rm web python manage.py migrate
+docker compose run --rm web python manage.py setup_roles
+docker compose run --rm web python manage.py collectstatic --noinput
+docker compose run --rm web python manage.py createsuperuser
+docker compose up -d web
 ```
 
-Masuk dengan username `owner` atau `operasional` dan password yang ditentukan di perintah itu.
-Jangan gunakan data contoh untuk pencatatan keuangan sungguhan.
+Buka `http://127.0.0.1:8000`. Konfigurasi yang dibuat `setup_local.py` ditujukan untuk komputer lokal dan tidak menimpa `.env` yang sudah ada. Username/password Superadmin dibuat melalui `createsuperuser`, bukan akun bawaan.
 
-## Alur penggunaan
+Untuk server produksi: gunakan `DEBUG=0`, secret milik server, domain pada `ALLOWED_HOSTS`, origin HTTPS pada `CSRF_TRUSTED_ORIGINS`, HTTPS reverse proxy, dan header `X-Forwarded-Proto` yang ditetapkan oleh proxy terpercaya. Jangan memakai `runserver` sebagai server produksi.
 
-1. **Barang:** daftar kode, nama, kategori, dan satuan. **Supplier & mitra:** daftar supplier, koperasi, dan dapur.
-2. **Historis harga supplier:** input barang, supplier, harga per satuan, tanggal berlaku, dan catatan. Setiap perubahan menambah riwayat; tidak menimpa penawaran sebelumnya. Pilih barang untuk melihat penawaran terbaru yang sudah berlaku dari masing-masing supplier, diurutkan dari termurah. Harga masa depan tetap muncul dalam historis tetapi belum masuk daftar pilihan.
-3. **Pengadaan & harga:** pilih koperasi, dapur, nama kantor penerima invoice, dan tanggal pengiriman. Isi seluruh baris barang. Klik **Bandingkan penawaran** pada baris terkait, lalu **Gunakan penawaran** untuk memilih supplier. Supplier dan harga belinya terisi dari penawaran. Harga transaksi tetap dapat diinput manual; harga manual yang disimpan juga ditambahkan ke historis.
-4. Setelah seluruh barang dan harga beli terisi, klik **Lanjut ke semua harga jual**. Tabel berikutnya memuat seluruh barang untuk diisi tiga harga jual. Empat harga dalam alur ini adalah: beli supplier, KMS → koperasi, koperasi → dapur, serta dapur → kantor dapur. Harga kantor tidak boleh di bawah harga beli dapur. Tidak ada perhitungan porsi, tarif porsi, atau biaya operasional dapur.
-5. Owner menekan **Konfirmasi & terbitkan invoice**. Nama barang, satuan, harga, penerbit/penerima, nomor, dan konfigurasi cetak dikunci untuk transaksi ini. Dibuat tiga invoice penjualan dan satu tagihan pembelian untuk setiap supplier yang dipilih.
-6. Klik invoice untuk mencetak A4 atau menyimpan PDF melalui dialog cetak browser. Catat pembayaran penuh/sebagian dan unggah bukti bila diperlukan. Pembayaran mengurangi sisa tagihan, tidak mengubah omzet atau profit selisih harga.
+## Memperbarui instalasi lama dengan Docker
 
-### Dua dokumen untuk dapur
-
-| Dokumen | Penerbit → penerima | Harga yang digunakan |
-| --- | --- | --- |
-| Invoice KMS untuk koperasi | KMS → koperasi | Harga jual KMS |
-| Invoice pembelian dapur | Koperasi → dapur | Harga jual koperasi / harga beli dapur |
-| Invoice penjualan dapur | Dapur → kantor dapur | Harga yang sudah dinaikkan |
-
-Invoice ke kantor hanya memuat harga jual dapur, tanpa menampilkan harga beli supplier atau harga beli dapur. Kedua invoice dapur merupakan dua transaksi berbeda, bukan dua tagihan pembelian dapur yang sama.
-
-### Omzet dan profit
-
-Contoh per 1 kg: beli supplier Rp12.000, harga KMS Rp12.500, harga koperasi Rp13.000, dan harga kantor dapur Rp13.500.
-
-| Pihak | Omzet | Profit selisih harga |
-| --- | --- | --- |
-| KMS | Rp12.500 | Rp500 (harga KMS − beli supplier) |
-| Koperasi | Rp13.000 | Rp500 (harga koperasi − harga KMS) |
-| Dapur | Rp13.500 | Rp500 (harga kantor − harga beli dapur) |
-
-Seluruh nilai dikalikan jumlah barang dan dijumlah per transaksi. Omzet berasal dari invoice yang sudah terbit, bukan jumlah uang masuk; draf tidak dihitung. Laporan dapat difilter periode terbit, koperasi, dan dapur. Dashboard menampilkan bulan berjalan. Omzet ketiga pihak ditampilkan terpisah dan tidak dijumlahkan sebagai satu omzet gabungan. Profit ini adalah selisih harga, tidak memperhitungkan pajak atau biaya lainnya.
-
-### Nomor dan template invoice
-
-Owner membuka **Nomor & template invoice**, lalu memilih supplier, KMS, koperasi, atau dapur. Dapat diatur awalan, pola nomor, reset urutan per bulan/tahun atau tidak direset, judul, kop tambahan, alamat/kontak, rekening, penanda tangan, catatan kaki, template klasik/ringkas, serta jatuh tempo.
-
-Token nomor: `{prefix}`, `{year}`, `{month}`, `{seq}`. Nomor urut menggunakan minimal 5 digit. Contoh: `KMS/2026/10/00001`. Pola bulanan wajib memuat tahun dan bulan, serta setiap pola wajib memuat nomor urut. Pengaturan berlaku untuk invoice berikutnya; dokumen yang sudah terbit tidak dinomori ulang dan tidak berubah kopnya. Nomor dibuat otomatis dalam transaksi database.
-
-Pengaturan bawaan berlaku per jenis invoice (supplier/KMS/koperasi/dapur). Untuk supplier, koperasi, dan dapur, pilih penerbit tertentu lalu simpan pengaturan khusus. Mitra tanpa pengaturan khusus menggunakan pola bawaan. Nama penerbit/penerima tetap mengikuti mitra pengadaan. Logo kiri/kanan dan tiga penanda tangan dapat diatur pada kop. Posisi tanda tangan adalah kiri atas, kanan atas, dan tengah bawah; tiap posisi mendukung jabatan, nama, dan pangkat/NRP/NIP. Tersedia pratinjau sebelum disimpan. Tata letak tanda tangan dijaga sebagai satu blok saat dicetak.
-
-## Hak akses
-
-| Fitur | Owner / Superuser | Admin Operasional |
-| --- | --- | --- |
-| Master barang, mitra, historis harga dan pemilihan supplier | Ya | Ya |
-| Draf pengadaan dan harga supplier/koperasi/kantor | Ya | Ya |
-| Mengisi harga jual KMS → koperasi | Ya | Ya |
-| Konfirmasi dan menerbitkan invoice | Ya | Tidak |
-| Membatalkan pengadaan, pembayaran atau mutasi tersimpan | Ya | Tidak |
-| Menghapus baris barang tersimpan pada draf | Ya | Tidak |
-| Melihat harga transaksi dan invoice | Ya | Ya |
-| Mencatat pembayaran dan bukti | Ya | Ya |
-| Laporan omzet/profit koperasi dan dapur | Ya | Ya |
-| Laporan omzet/profit KMS | Ya | Tidak |
-| Nomor, template invoice dan jejak aktivitas | Ya | Tidak |
-| Melihat saldo, uang masuk/keluar KMS, dan mencatat mutasi manual | Ya | Ya |
-| Bukti pembayaran invoice (termasuk supplier) | Ya | Ya |
-| Bukti mutasi manual KMS dan ZIP audit tanggal | Ya | Ya |
-| Ekspor Excel/PDF pengadaan selesai | Ya | Ya |
-| Mengelola akun melalui Django admin | Superuser | Tidak |
-
-Admin melihat harga supplier dan harga KMS pada transaksi sehingga dapat menghitung selisih per transaksi. Kerahasiaan margin per transaksi belum diterapkan; laporan agregat omzet/profit KMS dan pengaturan kop masih khusus Owner. Admin sekarang diizinkan melihat kas dan memasukkan semua harga; input operasional dapur tetap tidak disediakan.
-
-## Pembayaran supplier, kas, dan bukti
-
-Buka invoice supplier di **Invoice Supplier** atau dari detail pengadaan. Masukkan nominal, tanggal, referensi transfer, dan bukti pembayaran. Pembayaran penuh/sebagian mengurangi sisa tagihan serta saldo KMS secara otomatis. Nominal tidak boleh melebihi tagihan atau saldo tersedia. Foto JPG/PNG sumber maksimal 5 MB dan PDF maksimal 1 MB dapat diunggah saat pembayaran atau ditambahkan kemudian pada riwayat pembayaran; bukti terkait dengan pembayaran tertentu, bukan hanya pengadaan.
-
-Di **Dana & mutasi KMS**, Owner maupun Admin Operasional dapat melihat saldo, total uang masuk/keluar, riwayat transaksi, dan bukti. Keduanya juga bisa mencatat saldo awal/modal dan uang masuk/keluar lainnya beserta bukti. Gunakan form pembayaran invoice untuk pelunasan tagihan, bukan mutasi manual, agar tidak terjadi pencatatan dua kali. Penerimaan koperasi ke KMS menambah saldo; pembayaran supplier menguranginya. Pembayaran dapur ke koperasi maupun kantor ke dapur tidak memengaruhi kas KMS.
-
-Saldo kas berbeda dari omzet dan profit selisih harga. Penambahan modal serta mutasi kas manual tidak mengubah laporan omzet/profit invoice. Saldo yang ditampilkan merupakan total mutasi yang dicatat, bukan saldo bank yang diperiksa otomatis. Tanggal pembayaran/mutasi tidak boleh berada di masa depan.
-
-Bukti pembayaran invoice dapat diakses oleh Owner dan Admin Operasional. Bukti mutasi manual, saldo, dan laporan kas KMS dapat diakses Owner serta Admin Operasional. File disimpan di volume lampiran privat dan diunduh melalui pemeriksaan login/role.
-
-## Memperbarui dari paket V1 / V1.1 / V1.2 / V1.3 / V1.4 / V1.5
-
-Backup database dan lampiran terlebih dahulu. Pertahankan `.env` milik instalasi dan volume Docker yang sama. Ganti kode aplikasi dengan paket ini, kemudian jalankan:
+Backup database dan lampiran terlebih dahulu. Pertahankan `.env`, nama project Compose dan volume data yang sama. Jangan menghapus volume database/lampiran. Hentikan web, salin kode baru, lalu jalankan:
 
 ```bash
 docker compose stop web
@@ -131,147 +46,98 @@ docker compose run --rm web python manage.py collectstatic --noinput
 docker compose up -d web
 ```
 
-Migrasi mempertahankan transaksi, pembayaran, nomor invoice, dan arsip data operasional lama. Invoice supplier lama kembali tampil dan bisa dibayar. Untuk pengadaan terkonfirmasi dari V1.1 yang belum memiliki invoice supplier, tagihan dipulihkan dari harga beli yang terkunci, dikelompokkan per supplier, dengan nomor `SUP-REC-...`. Cocokkan tagihan hasil pemulihan dengan dokumen supplier sebelum membayar. Ini tidak otomatis mencatat pembayaran baru.
+**Migrasi 0011 wajib dijalankan sebelum membuka V1.7.** Migrasi menambah penanda alur pengadaan: transaksi lama yang sudah keluar dari status Draf ditandai sebagai arsip alur lama; draf lama menggunakan alur baru saat dilanjutkan. Tidak ada tabel, harga, nomor, invoice, pembayaran, saldo, kop, atau berkas bukti lama yang dihapus. Harga kantor yang sudah tersimpan pada draf lama tetap ada di database, tetapi tidak diminta/dipakai untuk penerbitan dokumen baru.
 
-Pembayaran KMS/supplier lama yang belum memiliki mutasi kas dimasukkan ke ledger; pembayaran yang sudah memiliki mutasi tidak dimasukkan kedua kali. Tanggal mutasi mengikuti tanggal pembayaran. Bukti pengadaan lama tidak ditebak sebagai bukti pembayaran tertentu dan tetap tersedia pada pengadaan; unggah ulang pada pembayaran bila perlu. Setelah migrasi, periksa saldo dan catat saldo awal/modal yang memang belum pernah dicatat. Tidak ada penambahan modal buatan untuk menutup selisih saldo.
+Paket ini juga memuat seluruh migrasi V1 sampai V1.6. Migrasi lama untuk pemulihan tagihan supplier dan kas hanya berlaku jika instalasi belum menjalankannya. Cocokkan hasil pemulihan terhadap dokumen asli sebagaimana dijelaskan pada arsip dokumentasi V1.6.
 
-Harga beli supplier dari transaksi lama tetap diimpor menjadi historis harga. Harga rekomendasi lama tidak otomatis dianggap harga jual kantor dapur.
+## Menjalankan tanpa Docker
 
-Pengadaan lama yang sudah dikonfirmasi tidak otomatis mendapat invoice kantor dapur karena harga yang benar belum diketahui. Laporannya menampilkan **Belum ada invoice kantor** dan tidak mengada-adakan omzet/profit dapur. Draf lama harus dilengkapi harga kantor sebelum konfirmasi. Gunakan pengadaan baru untuk mencoba alur lengkap.
-
-Harga pada transaksi dikonfirmasi tetap dikunci. V1.5 menambah pembatalan pengadaan/pembayaran/mutasi khusus Owner/Superadmin dengan alasan dan audit. Koreksi dokumen terbit dilakukan dengan pembatalan lalu pencatatan pengganti. Retur barang, nota kredit parsial, stok gudang, dan pajak belum termasuk.
-
-## Pengujian
-
-Untuk tes transaksi dan penguncian bersamaan menggunakan PostgreSQL yang berjalan:
+Gunakan Python 3.12, PostgreSQL, virtual environment, Gunicorn dan Nginx. Salin `.env.example` menjadi `.env`, isi secret/domain/password database dan sesuaikan host PostgreSQL, lalu dari folder aplikasi:
 
 ```bash
-docker compose exec web python manage.py test
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python manage.py migrate
+.venv/bin/python manage.py setup_roles
+.venv/bin/python manage.py collectstatic --noinput
+.venv/bin/python manage.py createsuperuser
+.venv/bin/python manage.py check --deploy
 ```
 
-User database harus bisa membuat database tes. User bawaan image PostgreSQL dalam Compose memiliki kemampuan tersebut.
-Alternatif tes portabel (tidak memverifikasi konkurensi PostgreSQL):
+Jalankan Gunicorn melalui service systemd dengan pengguna aplikasi, bukan root. Contoh target aplikasi adalah `config.wsgi:application`; bind hanya ke loopback, misalnya `127.0.0.1:8010`, lalu arahkan Nginx ke port itu dan pasang HTTPS. WhiteNoise melayani aset statis yang sudah dikumpulkan. Jangan memberi akses Nginx publik ke `private_uploads`; bukti disajikan lewat endpoint Django dengan pemeriksaan login.
+
+Untuk instalasi non-Docker yang sebelumnya memakai service `/srv/kms/venv` dan folder `/srv/kms/app`, lakukan backup lalu hentikan service, salin kode baru tanpa menghapus `.env` dan `private_uploads`, kemudian:
 
 ```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux: source .venv/bin/activate
-pip install -r requirements.txt
-python manage.py test --settings=config.test_settings
+sudo systemctl stop kms
+cd /srv/kms/app
+sudo -u kms /srv/kms/venv/bin/pip install -r requirements.txt
+sudo -u kms /srv/kms/venv/bin/python manage.py migrate
+sudo -u kms /srv/kms/venv/bin/python manage.py setup_roles
+sudo -u kms /srv/kms/venv/bin/python manage.py collectstatic --noinput
+sudo systemctl start kms
+sudo systemctl status kms --no-pager
 ```
 
-## Server produksi dan pencadangan
+Sesuaikan path dan nama service bila berbeda. Pindah dari Docker ke instalasi native memerlukan pemindahan database serta isi volume bukti, bukan hanya menyalin kode.
 
-Konfigurasi bawaan khusus komputer lokal, DEBUG=1 dan port terikat ke 127.0.0.1. Untuk server, gunakan domain + HTTPS reverse proxy, DEBUG=0, ALLOWED_HOSTS dan CSRF_TRUSTED_ORIGINS sesuai domain, serta secret milik server. Jangan memublikasikan `.env`.
+## Pekerjaan operasional
 
-Backup database dan volume lampiran secara rutin. Contoh backup database (terminal Linux):
+1. Siapkan barang, satuan, supplier, koperasi dan dapur yang aktif. Gunakan pencarian agar tidak membuat master ganda.
+2. Bandingkan harga lewat Katalog Supplier & Harga. Tersedia tampilan berdasarkan barang atau supplier, harga terakhir dan histori. Tambahkan penawaran baru tanpa menimpa histori lama.
+3. Buat pengadaan: koperasi, dapur tujuan, tanggal pengiriman dan catatan. Nama kantor penerima tidak diminta lagi.
+4. Isi seluruh barang, jumlah, supplier dan harga beli per satuan. Pilih penawaran atau harga manual yang benar, lalu simpan draf atau lanjut. Maksimal 200 baris.
+5. Isi harga KMS → koperasi dan koperasi → dapur untuk seluruh barang. Semua harga jual harus positif saat pemeriksaan akhir. Admin Operasional boleh mengisi kedua harga. Simpan/kembali menyimpan draf; tidak menerbitkan invoice.
+6. Owner memeriksa lalu mengonfirmasi. Harga, nama, satuan, nomor dan kop dokumen dibekukan. Konfirmasi tidak dapat dilakukan admin operasional.
+7. Tandai dikirim dan diterima sesuai kejadian. Setelah **Diterima dapur**, tombol ekspor pengadaan Excel/PDF tersedia. Penerimaan barang tidak berarti tagihan lunas.
+8. Catat pembayaran dan bukti melalui invoice yang sesuai. Gunakan mutasi manual hanya untuk transaksi di luar pembayaran invoice.
+
+Panduan rinci Admin Operasional V1.7 disertakan pada folder `docs`.
+
+## Pembayaran kas dan pembatalan
+
+- Pembayaran supplier mengurangi kas KMS. Pembayaran koperasi pada invoice KMS menambah kas KMS. Pembayaran dapur pada invoice koperasi tidak mengubah kas KMS. Pembayaran arsip kantor lama juga tidak mengubah kas KMS.
+- Kas KMS dapat dilihat dan dicatat oleh Owner/Superadmin dan Admin Operasional. Nominal pembayaran tidak boleh melebihi sisa tagihan; uang keluar tidak boleh melebihi saldo. Tanggal pembayaran/mutasi tidak boleh di masa depan.
+- Aplikasi mencatat uang yang telah berpindah; tidak melakukan transfer bank. Jangan mencatat ulang pembayaran invoice sebagai mutasi manual.
+- Hanya Owner/Superadmin yang boleh menghapus baris draf tersimpan atau membatalkan pembayaran, mutasi dan pengadaan. Pembatalan dilakukan lewat menu tiga titik atau Kelola pengadaan, diikuti alasan. Data dan bukti tetap tersimpan.
+- Pembatalan pembayaran membatalkan mutasi terkait dan memperbarui sisa tagihan secara atomik. Pengadaan yang masih memiliki pembayaran aktif harus diselesaikan pembatalan pembayarannya terlebih dahulu. Pembatalan pemasukan ditolak jika membuat saldo negatif.
+- Invoice kantor lama tidak dipindahkan ke invoice koperasi dan tidak diubah totalnya. Gunakan nomor arsip lama untuk pelunasan atau penelusuran agar tidak menggandakan transaksi.
+
+## Bukti laporan dan filter
+
+- Foto JPG/PNG sumber maksimal 5 MB dioptimasi hingga maksimal 300 KB. PDF maksimal 1 MB dan tidak dikompres otomatis. Foto asli unggahan baru tidak disimpan setelah optimasi.
+- Daftar menampilkan data dan ikon mata, tanpa thumbnail. Nama unduhan mengikuti tanggal dan transaksi. Bukti tetap privat dan memerlukan login.
+- Unduh bukti per tanggal menghasilkan ZIP dan `daftar-bukti.csv`. Tanggal pembayaran mengikuti tanggal bayar, mutasi manual mengikuti tanggal mutasi, dan lampiran pengadaan mengikuti tanggal pengiriman. Arsip juga memuat bukti transaksi batal; berkas yang hilang menyebabkan arsip ditolak agar audit tidak diam-diam kehilangan bukti.
+- Daftar transaksi memakai bulan berjalan Asia/Jakarta. Mengganti bulan langsung menerapkan filter. Reset kembali ke bulan berjalan; Semua bulan membuka lintas periode. Pagination dan Excel mempertahankan filter. Arsip invoice kantor juga dapat dicari dengan pilihan Semua bulan.
+- Dasar periode: pengadaan memakai tanggal pengiriman, invoice memakai tanggal terbit, kas memakai tanggal mutasi, pembayaran memakai tanggal bayar dan omzet memakai tanggal konfirmasi. Saldo KMS tetap seluruh tanggal aktif; total masuk/keluar mengikuti filter.
+- Profit KMS adalah selisih harga KMS dan beli supplier dikali jumlah. Profit koperasi adalah selisih harga koperasi dan harga KMS dikali jumlah. Laporan menggunakan nilai invoice terbit dan tidak menyamakan omzet dengan kas yang diterima.
+
+## Kop dan ekspor pengadaan
+
+Owner membuka Kop & template dokumen, lalu memilih supplier, KMS, koperasi atau laporan pengadaan. Atur judul, nama organisasi, alamat/kontak, dua logo, tiga penanda tangan, rekening dan catatan. Invoice mendukung format nomor dan reset urutan. Laporan pengadaan memakai nomor PGD. Perubahan berlaku pada dokumen yang diterbitkan berikutnya; snapshot lama tidak ditimpa.
+
+Ekspor baru menggunakan 11 kolom: No, Tanggal, Keterangan, QTY, Satuan, HPP KMS, Margin KMS, HPP KOP, Margin KOP, Harga Beli Dapur, Total ke Dapur. HPP KMS adalah harga supplier, HPP KOP adalah harga KMS ke koperasi, harga beli dapur adalah harga koperasi ke dapur. Total ke dapur adalah jumlah dikali harga beli dapur, dibulatkan dua desimal. Ekspor arsip pengadaan lama memakai format sebelumnya, termasuk harga dan profit dapur lama, supaya riwayat tidak ditulis ulang.
+
+## Backup dan pengujian
+
+Backup database PostgreSQL dan folder `private_uploads` atau volume bukti secara rutin, lalu uji pemulihannya. Salinan kode tidak memuat database atau foto bukti. Contoh backup Docker (sesuaikan user/database):
 
 ```bash
 docker compose exec -T db pg_dump -U kms -d kms -Fc > kms-backup.dump
 ```
 
-Sesuaikan nama user/database jika diubah. Backup volume `evidence` juga diperlukan karena database hanya menyimpan referensi berkas. Uji pemulihan pada lingkungan terpisah.
+Jalankan tes dengan PostgreSQL untuk pemeriksaan konkurensi:
 
-## Fitur tampilan dan laporan V1.3
+```bash
+python manage.py test
+```
 
-- **Invoice Supplier** khusus tagihan pembelian, pembayaran, sisa utang, dan bukti. **Invoice Penjualan** khusus dokumen KMS, koperasi, serta kantor dapur. Kedua kelompok terpisah juga pada detail pengadaan.
-- Pencarian barang berdasarkan nama/kode menampilkan kode, nama, dan satuan. Pencarian supplier, koperasi, dan dapur memuat maksimal 20 hasil per pencarian dari server; formulir tidak memuat seluruh master ke dropdown. Gunakan tombol panah dan Enter untuk memilih dengan keyboard.
-- Input pengadaan kini dilakukan sekaligus: seluruh barang, jumlah, supplier, dan harga beli pada satu tabel, lalu seluruh harga jual pada tabel berikutnya. Pilihan supplier terisi dari perbandingan penawaran atau pencarian manual.
-- **Omzet & profit → Export Excel** mengikuti periode/koperasi/dapur. Workbook berisi ringkasan, detail omzet, pembayaran untuk invoice yang dilaporkan, serta tautan bukti. Tanggal pembayaran pada sheet pendukung dapat berbeda dari periode terbit invoice.
-- **Dana & mutasi KMS → Export Excel** menghasilkan ringkasan kas, riwayat mutasi bertanda, dan tautan bukti. Export kas tersedia untuk Owner dan Admin Operasional.
-- **Pembayaran & bukti** menampilkan data pembayaran dan tombol mata untuk melihat bukti. Filter tanggal pembayaran, supplier, jenis invoice, koperasi, atau dapur lalu export Excel. Satu pembayaran tetap satu baris meskipun memiliki beberapa bukti; tautan bukti berada di sheet tersendiri. Tautan memerlukan login dan hak akses. Gambar tidak ditanam dalam workbook agar export ringan.
-- Laporan/Excel untuk Admin Operasional tidak menyertakan omzet/profit atau agregat pembayaran masuk KMS. Akses invoice individual tetap mengikuti aturan sebelumnya.
-- Klik **Lihat bukti** (ikon mata) untuk pratinjau foto/PDF tanpa mengunduh. Foto tidak dimuat pada daftar transaksi. Browser yang tidak mendukung dialog dapat membuka bukti pada tab baru.
-- Foto baru dioptimasi di server, sisi terpanjang maksimal 1.600 piksel dan ukuran tersimpan maksimal 300 KB, serta thumbnail maksimal 320 piksel. Foto asli unggahan tidak disimpan setelah optimasi. Jika foto terlalu kompleks untuk batas ini, unggahan ditolak dan pengguna diminta memotong bagian yang tidak diperlukan. PDF tidak dikompres otomatis dan dibatasi 1 MB.
-- Logo JPG/PNG sumber maksimal 2 MB dioptimasi menjadi PNG, sisi maksimal 600 piksel, tersimpan maksimal 200 KB. Logo bisa dihapus/diganti untuk dokumen berikutnya; logo lama tetap disimpan jika dipakai invoice terbit. SVG tidak diterima.
-- File bukti lama tidak diubah/dihapus otomatis; batas kompresi diterapkan pada unggahan baru. Bukti lama tanpa thumbnail tetap bisa dipratinjau dari file yang ada.
-- Judul/keterangan dokumen kantor dapur tidak menggunakan tulisan “harga dinaikkan”. Perhitungan profit tetap menggunakan selisih harga transaksi.
+Tes portabel terisolasi:
 
-### Mengubah kop dan tiga tanda tangan
+```bash
+python manage.py test --settings=config.test_settings
+```
 
-1. Masuk sebagai Owner dan buka **Kop & template invoice**.
-2. Pilih jenis invoice. Untuk koperasi/dapur/supplier tertentu, cari nama penerbit pada **Atur untuk penerbit**, lalu tekan **Buka pengaturan**. Pilih **Pola bawaan** untuk mengubah template umum.
-3. Atur nomor dan jatuh tempo, lalu nama organisasi, alamat, serta logo kiri/kanan. Tersedia centang untuk menghapus logo dari dokumen berikutnya.
-4. Isi tiga blok penanda tangan: jabatan dan nama wajib diisi bila posisi tersebut digunakan; identitas pangkat/NRP/NIP opsional. Contoh jabatan pada placeholder hanya panduan dan tidak otomatis memakai identitas organisasi tertentu.
-5. Atur rekening, catatan, dan template klasik/ringkas. Lihat pratinjau kop/tanda tangan di sebelah formulir, lalu simpan.
-6. Terbitkan invoice baru dari pengadaan. Invoice lama tidak berubah logo/kop/nama penanda tangannya. Format satu penanda tangan lama tetap tersedia pada bagian lipat untuk kompatibilitas.
+Validasi V1.7: 108 tes portabel lulus dari 110 tes; dua tes konkurensi PostgreSQL belum dijalankan. Cakupan termasuk migrasi tanpa perubahan data keuangan lama, penerbitan hanya sampai dapur, harga kantor yang diabaikan, dua harga jual, arsip invoice dan pelunasannya, ekspor baru/lama serta batas akses. Hasil Excel/PDF dan panduan diperiksa lewat render. Pemeriksaan browser mencakup input harga, konfirmasi, navigasi arsip dan laporan. Paket belum diterapkan ke server pengguna.
 
-## Input sekaligus V1.4
-
-1. **Pengadaan & harga → Buat pengadaan**: pilih koperasi, dapur, kantor penerima dan tanggal, lalu simpan.
-2. Aplikasi langsung membuka **Semua barang & harga supplier**. Tambahkan baris sesuai kebutuhan dan cari nama/kode barang. Isi jumlah, pilih supplier, dan isi harga beli per satuan. Gunakan **Bandingkan penawaran** pada baris untuk melihat seluruh penawaran terbaru barang itu dan memilih supplier/harga sekaligus. Mendukung maksimal 200 baris per pengadaan.
-3. Tekan **Simpan draf** bila belum ingin mengisi harga jual, atau **Lanjut ke semua harga jual** jika daftar barang sudah lengkap. Kedua tombol menyimpan seluruh baris yang valid ke database; invoice belum dibuat.
-4. Pada **Semua harga jual**, isi harga KMS → koperasi, koperasi → dapur, dan dapur → kantor untuk seluruh barang pada satu tabel. Harga beli serta jumlah tetap terlihat sebagai referensi. Admin Operasional dapat mengisi harga KMS; Owner memeriksa sebelum konfirmasi.
-5. **Simpan & kembali ke barang** menyimpan harga yang sudah diisi sebagai draf (harga yang belum diisi boleh kosong/0), lalu membuka kembali daftar pembelian. Isian jumlah/supplier tetap tersimpan. Untuk melanjutkan pemeriksaan, seluruh harga yang menjadi kewenangan pengguna harus lengkap dan harga kantor minimal sama dengan harga beli dapur.
-6. **Simpan & periksa pengadaan** membuka ringkasan, tanpa menerbitkan invoice. Owner memeriksa lalu mengonfirmasi sebagaimana alur sebelumnya. Mekanisme invoice per supplier, tiga invoice penjualan, pembayaran, bukti dan kas tidak berubah.
-7. Dari ringkasan draf, gunakan **Input semua barang** dan **Isi semua harga jual** untuk memperbaiki seluruh daftar. Link edit per barang dari versi lama masih didukung untuk kompatibilitas.
-
-Isian tersimpan ketika tombol simpan/lanjut/kembali ditekan; bukan setiap ketukan keyboard. Jika dua tab atau akun mengubah pengadaan bersamaan, versi yang tertinggal ditolak agar perubahan pihak lain tidak tertimpa. Muat ulang halaman dan periksa ulang sebelum menyimpan. Mengganti jenis barang pada baris lama mengosongkan harga jual baris tersebut agar harga produk lama tidak terpakai pada produk baru. Mengubah jumlah/supplier untuk barang yang sama mempertahankan harga jual per satuannya.
-
-## Katalog Supplier & Harga
-
-- Pilih **Berdasarkan barang**, cari misalnya Ayam potong, lalu tekan **Tampilkan katalog**. Daftar menampilkan semua supplier terdaftar untuk barang itu, harga terbaru yang sudah berlaku, satuan, dan tanggal harga.
-- Pilih **Berdasarkan supplier**, cari Supplier A, lalu tampilkan katalog. Daftar menampilkan seluruh barang yang ditawarkan supplier itu dan harga terakhirnya. Filter barang dan supplier bisa dipakai bersama untuk satu pasangan tertentu.
-- Tekan **Lihat histori** untuk seluruh perubahan harga pasangan barang–supplier, termasuk penawaran yang baru berlaku di masa depan. Harga dengan satuan lama tetap ditampilkan sesuai satuannya; perbandingan harga terbaru hanya memakai satuan master saat ini.
-- **Daftarkan barang supplier** mencatat produk yang ditawarkan meskipun belum pernah dibeli dan belum memiliki harga. Baris tanpa harga tampil sebagai **Belum ada harga**; tambahkan penawaran melalui **Historis harga**.
-- Pasangan barang–supplier dari penawaran dan transaksi lama diimpor saat migrasi. Penawaran baru dan pembelian baru otomatis menambah pasangan tersebut. Migrasi ini tidak mengubah invoice, pembayaran, harga transaksi, atau saldo.
-
-## Cetak invoice padat V1.4
-
-Kop dan logo diperkecil, nomor/tanggal disusun sejajar, pihak penerbit/penerima dipadatkan, jarak antarbaris barang dikurangi, dan blok total/rekening/tiga tanda tangan dipadatkan. Tinggi minimum workspace tidak dibawa ke halaman cetak, sehingga tidak menghasilkan lembar kosong tambahan. Aturan cetak dipisahkan dalam aset khusus.
-
-Gunakan **A4, portrait, skala 100%**, lalu matikan header/footer tambahan browser (tanggal/URL). File CSS menentukan margin halaman 10 mm. Baris barang tetap terbaca; nama panjang tidak dipotong hanya untuk mengejar jumlah halaman. Jumlah baris yang muat bergantung panjang nama, kop, rekening, dan identitas penanda tangan.
-
-Uji render dengan WeasyPrint 70 menggunakan kop 3 baris, dua logo, rekening, dan tiga penanda tangan: contoh 1, 15, dan 20 baris masing-masing satu halaman A4; 40 baris menjadi dua halaman. Total dan blok tanda tangan hanya tampil pada halaman terakhir. Ini uji render PDF independen, bukan jaminan seluruh konfigurasi browser/printer identik. Pengadaan dengan barang lebih banyak tetap dapat dicetak beberapa halaman tanpa membatasi jumlah barang ke satu halaman.
-
-## Status validasi paket
-
-V1.6: 98 tes portabel lulus, dua tes konkurensi PostgreSQL belum dijalankan. Pemeriksaan browser Chromium mencakup tabel, filter bulan/status, aksi, pratinjau bukti dan layar desktop/ponsel. Detail ada pada bagian V1.6 di akhir dokumen. Paket belum diterapkan ke server pengguna.
-
-## Koreksi transaksi dan hak akses V1.5
-
-- Admin Operasional bisa mengisi harga KMS → koperasi, koperasi → dapur dan dapur → kantor, mencatat pembayaran, melihat kas serta membuat uang masuk/keluar manual dan bukti. Konfirmasi dokumen tetap oleh Owner/Superadmin.
-- Owner/Superadmin dapat mengubah tujuan/tanggal/catatan pada **Ubah tujuan / tanggal** selama pengadaan masih draf. Barang dan harga draf diedit melalui dua tabel seperti sebelumnya. Hanya Owner/Superadmin yang dapat menghapus baris tersimpan; admin boleh membuang baris baru yang belum disimpan.
-- Untuk salah catat pembayaran: buka invoice → **Batalkan pembayaran** → isi alasan minimal 5 karakter → konfirmasi. Pembayaran dan mutasi terkait ditandai batal bersama. Sisa invoice dan kas dihitung ulang; bukti dan data lama tetap tersimpan. Catat pembayaran baru bila diperlukan. Pembatalan bukan transfer pengembalian dana bank.
-- Untuk mutasi manual: **Dana & mutasi KMS → Batalkan mutasi**. Mutasi otomatis dari pembayaran harus dibatalkan lewat pembayaran agar sisa tagihan tetap sesuai.
-- Untuk membatalkan pengadaan: selesaikan pembatalan setiap pembayaran aktifnya, lalu **Batalkan pengadaan** pada ringkasan. Semua invoice terkait menjadi tidak berlaku dan pengadaan tidak dihitung pada omzet/profit. Pengadaan yang dibatalkan tidak dapat dibayar atau dilanjutkan statusnya. Buat pengadaan baru untuk koreksi transaksi yang sudah terbit.
-- Pembatalan uang masuk ditolak jika penghapusannya dari saldo aktif menyebabkan saldo negatif. Selesaikan dana yang memang sudah dipakai terlebih dahulu. Pembatalan berulang tidak menggandakan perubahan saldo.
-- Transaksi keuangan tidak dihapus secara fisik. Data pembayaran/mutasi yang batal masih ada pada riwayat bertanda **Dibatalkan**, tetapi tidak masuk total aktif. Export kas menyertakan status per baris. Laporan pembayaran aktif mengecualikan pembayaran batal.
-- Jejak pembatalan mencatat pelaku, alasan, waktu dan ID transaksi. Pembatasan hak akses juga berlaku di server, termasuk permintaan langsung ke URL dan manipulasi form.
-
-## Bukti dan unduhan audit V1.5
-
-1. Pada riwayat kas/pembayaran, tekan ikon mata **Lihat bukti** untuk membuka foto/PDF. Daftar tidak memuat thumbnail atau foto secara otomatis.
-2. Nama unduhan mengikuti tanggal transaksi, jenis/nomor transaksi dan ID bukti. Contoh: `2026-10-28-pgd-00001-supplier-sup-2026-10-00001-bayar-12-bukti-7.jpg`. Foto baru tetap dikompres maksimal 300 KB, PDF maksimal 1 MB. Bukti lama memperoleh nama unduhan yang sesuai tanpa memindahkan atau mengganti bytes berkas lama.
-3. **Dana & mutasi KMS → Unduh bukti per tanggal (ZIP)** atau tombol sejenis di laporan pembayaran. Isi tanggal awal/akhir (inklusif). ZIP berisi bukti dalam folder per tanggal dan `daftar-bukti.csv` untuk mencocokkan berkas dengan transaksi/statusnya.
-4. Tanggal bukti pembayaran mengikuti tanggal bayar; bukti mutasi manual mengikuti tanggal mutasi; lampiran pengadaan mengikuti tanggal pengiriman. Tanggal unggah tidak dipakai sebagai pengganti tanggal transaksi.
-5. Arsip memuat semua jenis pembayaran dan mutasi KMS, termasuk bukti transaksi batal bertanda `batal`, serta lampiran pengadaan pada rentang tanggal itu. Bukti yang belum pernah diunggah tidak dibuat otomatis. Jika berkas hilang dari volume, unduhan arsip ditolak agar hasil audit tidak diam-diam menghilangkan bukti.
-6. Filter tanggal pada riwayat kas mengatur daftar dan total masuk/keluar periode; saldo KMS tetap saldo aktif semua tanggal. Filter riwayat kas tidak membatasi transaksi baru yang dicatat melalui form.
-
-## Ekspor pengadaan Excel/PDF V1.5
-
-1. Sebelum konfirmasi pengadaan, Owner membuka **Kop & template dokumen → Laporan pengadaan**. Atur judul (default **PENAWARAN HARGA**), nama organisasi, alamat/kontak, dua logo, rekening/catatan dan tiga penanda tangan opsional. Nomor laporan memakai nomor pengadaan PGD, bukan urutan nomor invoice.
-2. Konfirmasi pengadaan menyimpan kop sebagai snapshot. Perubahan pengaturan berikutnya tidak mengubah dokumen transaksi yang sudah terbit. Pengadaan lama mendapat snapshot dari kop invoice KMS yang sudah ada dengan judul Penawaran Harga; tidak mengubah harga, invoice, pembayaran atau saldo lama.
-3. Lanjutkan status **Dikonfirmasi → Dalam pengiriman → Diterima dapur**. Status Diterima dapur berarti selesai untuk keperluan ekspor, walaupun invoice masih dapat dicicil. Tombol **Export pengadaan Excel / PDF** muncul pada detail pengadaan. Draf, pengadaan belum diterima dan pengadaan batal tidak dapat diekspor sebagai laporan selesai.
-4. Kedua format memakai kolom sesuai contoh: No, Tanggal, Keterangan, QTY, Satuan, HPP KMS, Margin KMS, HPP KOP, Margin KOP, HPP Dapur, Rekomendasi Dapur, Profit Dapur, Total Profit. Harga dan margin adalah rupiah per satuan; total profit dikalikan jumlah barang.
-5. Definisi: **HPP KMS = harga beli supplier**, **Margin KMS = harga KMS ke koperasi − harga beli supplier**, **HPP KOP = harga KMS ke koperasi**, **Margin KOP = harga koperasi ke dapur − harga KMS**, **HPP Dapur = harga koperasi ke dapur**, **Rekomendasi Dapur = harga dapur ke kantor**, **Profit Dapur = harga kantor − HPP Dapur**, **Total Profit = jumlah × profit dapur**. Tidak menambahkan input harga baru.
-6. Excel berisi angka/tanggal bertipe asli, total profit, kop/logo, tiga tanda tangan, pengulangan kepala tabel dan pengaturan cetak A4 landscape. Nilai harga ekspor adalah snapshot transaksi, bukan rumus dinamis untuk mengubah invoice dari Excel. PDF diunduh langsung dari server, tidak memerlukan dialog cetak browser. Tabel yang panjang dilanjutkan ke halaman berikutnya dengan kepala tabel berulang, tanda tangan di akhir.
-
-Validasi V1.5: 82 tes portabel lulus (84 total, 2 tes PostgreSQL konkurensi dilewati), termasuk hak akses baru, pembatalan/idempotensi/saldo, pemblokiran pembayaran batal, ZIP audit dan pemetaan tanggal, filter kas, nama bukti, ekspor selesai, snapshot kop serta perhitungan margin/profit. PDF contoh 33 baris dan 100 nama panjang berhasil dirender; contoh 33 baris diperiksa visual. Workbook contoh juga dibuka/dicetak lewat LibreOffice dan diperiksa visual. Browser interaktif dan konkurensi PostgreSQL belum diverifikasi dalam lingkungan ini. Belum diterapkan ke server pengguna.
-
-
-## Tabel dan filter bulanan V1.6
-
-- Daftar pengadaan, invoice supplier/penjualan, kas, pembayaran, omzet/profit dan jejak aktivitas memakai bulan berjalan dari waktu server **Asia/Jakarta**. Bawaan dihitung ulang setiap membuka halaman tanpa pilihan bulan, sehingga berganti bulan/tahun otomatis mengikuti kalender.
-- Pilih bulan lain pada kolom **Bulan**. Pilihan langsung diterapkan dan centang **Semua bulan** dinonaktifkan. Pilihan eksplisit tetap mengikuti bulan itu saat membuka halaman berikutnya atau mengekspor. Tekan **Reset** untuk kembali ke bulan berjalan, atau centang **Semua bulan** lalu Terapkan untuk seluruh periode.
-- Dasar tanggal: pengadaan memakai tanggal pengiriman; invoice memakai tanggal terbit; kas memakai tanggal mutasi; laporan pembayaran memakai tanggal pembayaran; omzet/profit memakai tanggal konfirmasi pengadaan; audit memakai waktu aktivitas. Saldo KMS tetap semua tanggal, sedangkan total masuk/keluar mengikuti filter aktif dan mengecualikan pembatalan.
-- **Status** membatasi daftar, **Urutkan → Status** mengelompokkan status. Pengadaan diurutkan Draf → Dikonfirmasi → Dalam pengiriman → Diterima dapur → Dibatalkan. Invoice diurutkan Belum dibayar → Dibayar sebagian → Lunas → Dibatalkan. Transaksi kas/pembayaran menampilkan transaksi aktif dahulu, kemudian pembatalan. Tersedia urutan Terbaru/Terlama. Laporan pembayaran bawaan tetap hanya transaksi Aktif; pilih Dibatalkan atau Semua status untuk audit.
-- **Filter lainnya** membuka rentang tanggal, mitra dan jenis invoice pada halaman yang mendukungnya. Rentang tanggal eksplisit dari tautan lama tetap bekerja lintas bulan jika tidak menyertakan parameter bulan. Jika bulan dan rentang tanggal sama-sama dipilih, keduanya diterapkan sebagai irisan. Pilihan tanggal tidak diubah menjadi pencatatan transaksi.
-- Filter bulanan tidak menyembunyikan master barang/mitra, katalog supplier atau histori penawaran harga. Data referensi dan perbandingan harga tetap tersedia lintas periode. Master barang/mitra kini dapat difilter Aktif/Nonaktif dan diurutkan berdasarkan status.
-- Tabel layar memakai baris pendek, nominal tanpa desimal nol yang berulang (Rp100.000), serta desimal yang tetap terlihat bila bernilai (Rp100.000,50). Teks panjang dipadatkan dengan ellipsis dan nama lengkap tersedia lewat tooltip atau detail transaksi. Pada layar ponsel, tabel dapat digeser mendatar di dalam panel; halaman tidak ikut melebar.
-- Ikon mata membuka bukti. Menu **tiga titik pada kolom Aksi** membuka rincian baris, tambah bukti dan pembatalan. Pembatalan ditempatkan terpisah pada bagian bawah dialog, tetap khusus Owner/Superadmin dan tetap meminta alasan pada halaman konfirmasi. Pada detail pengadaan gunakan **Kelola pengadaan**; pada riwayat pembayaran invoice gunakan tiga titik baris pembayaran.
-- Warna status: draf abu-abu, dikonfirmasi biru, dikirim kuning, diterima/lunas hijau, cicilan ungu, belum dibayar jingga, dibatalkan merah. Status tetap ditulis dengan teks agar tidak bergantung warna saja. Jenis uang masuk/keluar juga dibedakan.
-- Form filter keuangan memakai komponen yang sama dengan pengadaan/invoice, tombol Terapkan dan Reset sejajar, filter lanjutan bisa dilipat. Form pencatatan kas dipisahkan dan bisa dibuka melalui **Catat uang masuk / keluar lainnya**.
-- Tidak ada perubahan skema database pada V1.6. Pembaruan tetap membutuhkan build ulang image dan collectstatic. Jalankan langkah pembaruan di atas; migrate aman dijalankan untuk memastikan versi lama juga lengkap. Pertahankan `.env` dan volume database/lampiran.
-
-Validasi V1.6: **98 tes lulus dari 100 tes**, dua tes konkurensi PostgreSQL dilewati. Tes tambahan mencakup bulan berjalan dan pergantian tahun, batas tanggal bulanan, pilihan semua bulan, penolakan filter tidak valid, kombinasi status/jenis/sortir, laporan dan Excel sesuai periode, pagination mempertahankan filter, master lintas periode, hak akses aksi dan pecahan rupiah tetap terlihat. Chromium memeriksa halaman kas, pengadaan, kedua daftar invoice, pembayaran, omzet dan master; dialog aksi, filter lanjutan, perpindahan bulan otomatis, serta tampilan 1440/1024/390 piksel. Tidak ada kesalahan JavaScript pada pemeriksaan tersebut. Ini pemeriksaan dengan data contoh, belum penerapan ke server pengguna.
+Dokumentasi V1.6 disimpan di `docs/RIWAYAT_V1_6.md` sebagai riwayat versi; alur aktif mengikuti README V1.7 ini.

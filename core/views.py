@@ -14,7 +14,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
-from .models import Product,Partner,Procurement,OrderItem,Invoice,Attachment,SupplierPrice,InvoiceProfile,AuditEvent,Payment,SALES_KINDS,INVOICE_KINDS,LedgerEntry,FinancialEvidence,DOCUMENT_KINDS,document_label
+from .models import Product,Partner,Procurement,OrderItem,Invoice,Attachment,SupplierPrice,InvoiceProfile,AuditEvent,Payment,SALES_KINDS,INVOICE_KINDS,LedgerEntry,FinancialEvidence,DOCUMENT_KINDS,document_label,ACTIVE_INVOICE_KINDS,ACTIVE_DOCUMENT_KINDS
 from .forms import ProductForm,PartnerForm,ProcurementForm,ItemForm,PaymentForm,AttachmentForm,SupplierPriceForm,InvoiceProfileForm,ReportFilterForm,CashForm,PaymentReportFilterForm,InvoiceListFilterForm
 from .permissions import require_access,is_owner,owner_required
 from . import services
@@ -35,16 +35,14 @@ def error_message(request,error): messages.error(request,' '.join(error.messages
 
 def report_data(user, orders):
     rows=[]
-    totals={'coop_sales':Decimal('0'),'coop_margin':Decimal('0'),'kitchen_sales':Decimal('0'),'kitchen_margin':Decimal('0')}
+    totals={'coop_sales':Decimal('0'),'coop_margin':Decimal('0')}
     if is_owner(user): totals.update(kms_sales=Decimal('0'),kms_margin=Decimal('0'))
     for order in orders:
         if order.status=='cancelled':continue
         invoices={i.kind:i for i in order.invoices.all() if i.kind in SALES_KINDS}
-        kms=invoices.get('kms'); coop=invoices.get('cooperative'); kitchen=invoices.get('kitchen')
+        kms=invoices.get('kms'); coop=invoices.get('cooperative')
         row={'order':order,'coop_sales':coop.total if coop else None,
-             'coop_margin':coop.total-kms.total if coop and kms else None,
-             'kitchen_sales':kitchen.total if kitchen else None,
-             'kitchen_margin':kitchen.total-coop.total if kitchen and coop else None}
+             'coop_margin':coop.total-kms.total if coop and kms else None}
         if is_owner(user):
             purchase=sum((i.purchase_total for i in order.items.all()),Decimal('0'))
             row.update(kms_sales=kms.total if kms else None,kms_margin=kms.total-purchase if kms else None)
@@ -56,7 +54,7 @@ def report_data(user, orders):
 @access
 def dashboard(request):
     orders=Procurement.objects.select_related('kitchen','cooperative')
-    invoices=Invoice.objects.filter(kind__in=INVOICE_KINDS).exclude(procurement__status='cancelled').prefetch_related('payments')
+    invoices=Invoice.objects.filter(kind__in=ACTIVE_INVOICE_KINDS).exclude(procurement__status='cancelled').prefetch_related('payments')
     today=timezone.localdate()
     confirmed=orders.exclude(status__in=['draft','cancelled']).filter(confirmed_at__year=today.year,confirmed_at__month=today.month).prefetch_related('items','invoices')
     _,totals=report_data(request.user,confirmed)
@@ -106,7 +104,7 @@ def orders(request):
         data=form.cleaned_data;qs=period(qs,form,'delivery_date')
         if data.get('status'):qs=qs.filter(status=data['status'])
         if data.get('q'):
-            q=data['q'];qs=qs.filter(Q(kitchen__name__icontains=q)|Q(cooperative__name__icontains=q)|Q(office_name__icontains=q)|Q(pk=int(q[4:]) if q.upper().startswith('PGD-') and q[4:].isdigit() and len(q)<20 else -1))
+            q=data['q'];qs=qs.filter(Q(kitchen__name__icontains=q)|Q(cooperative__name__icontains=q)|Q(pk=int(q[4:]) if q.upper().startswith('PGD-') and q[4:].isdigit() and len(q)<20 else -1))
         qs=order_sort(qs,data.get('sort'))
     else:qs=qs.none()
     return render(request,'core/order_list.html',{'active':'orders','page':paginate(request,qs),'filter_form':form,'period_hint':'Berdasarkan tanggal pengiriman'})
@@ -126,7 +124,7 @@ def order_detail(request,pk):
     order=get_object_or_404(Procurement.objects.select_related('cooperative','kitchen','created_by'),pk=pk)
     items=list(order.items.select_related('product','supplier'))
     totals={'purchase':sum((i.purchase_total for i in items),Decimal('0')),'kms':sum((i.kms_total for i in items),Decimal('0')),'coop':sum((i.cooperative_total for i in items),Decimal('0')),'kitchen':sum((i.kitchen_total for i in items),Decimal('0'))}
-    return render(request,'core/order_detail.html',{'active':'orders','order':order,'items':items,'totals':totals,'invoices':order.invoices.filter(kind__in=SALES_KINDS).prefetch_related('payments'),'supplier_invoices':order.invoices.filter(kind='supplier').prefetch_related('payments'),'attachments':order.attachments.all(),'attachment_form':AttachmentForm()})
+    return render(request,'core/order_detail.html',{'active':'orders','order':order,'items':items,'totals':totals,'invoices':order.invoices.filter(kind__in=SALES_KINDS).prefetch_related('payments'),'legacy_invoices':order.invoices.filter(kind='kitchen').prefetch_related('payments'),'supplier_invoices':order.invoices.filter(kind='supplier').prefetch_related('payments'),'attachments':order.attachments.all(),'attachment_form':AttachmentForm()})
 
 @access
 def item_edit(request,order_id,pk=None):
@@ -157,7 +155,7 @@ def order_confirm(request,pk):
     get_object_or_404(Procurement,pk=pk)
     try:
         services.confirm_order(request.user,pk)
-        messages.success(request,'Harga dikunci. Tagihan per supplier serta invoice KMS, koperasi, dan kantor dapur telah diterbitkan.')
+        messages.success(request,'Harga dikunci. Tagihan per supplier serta invoice KMS ke koperasi dan koperasi ke dapur telah diterbitkan.')
     except ValidationError as e: error_message(request,e)
     return redirect('order_detail',pk=pk)
 
@@ -171,7 +169,7 @@ def order_advance(request,pk):
 
 def invoice_list(request,group):
     form=InvoiceListFilterForm(request.GET,group=group)
-    qs=Invoice.objects.filter(kind='supplier') if group=='supplier' else Invoice.objects.filter(kind__in=SALES_KINDS)
+    qs=Invoice.objects.filter(kind='supplier') if group=='supplier' else (Invoice.objects.filter(kind='kitchen') if group=='archive' else Invoice.objects.filter(kind__in=SALES_KINDS))
     qs=qs.select_related('procurement','supplier').prefetch_related('payments')
     if form.is_valid():
         data=form.cleaned_data
@@ -196,10 +194,14 @@ def invoice_list(request,group):
 @access
 def invoices(request):
     if request.GET.get('kind')=='supplier':return redirect('supplier_invoices')
+    if request.GET.get('kind')=='kitchen':return redirect('office_invoice_archive')
     return invoice_list(request,'sales')
 
 @access
 def supplier_invoices(request):return invoice_list(request,'supplier')
+
+@access
+def office_invoice_archive(request):return invoice_list(request,'archive')
 
 @access
 def invoice_detail(request,pk):
@@ -258,8 +260,8 @@ def reports(request):
     orders=filtered_orders(form)
     rows,totals=report_data(request.user,orders)
     if request.GET.get('export')=='xlsx' and form.is_valid():
-        fields=['coop_sales','coop_margin','kitchen_sales','kitchen_margin']
-        headers=['Omzet koperasi','Profit koperasi','Omzet dapur','Profit dapur']
+        fields=['coop_sales','coop_margin']
+        headers=['Omzet koperasi','Profit koperasi']
         if is_owner(request.user):fields=['kms_sales','kms_margin']+fields;headers=['Omzet KMS','Profit KMS']+headers
         data=[[row['order'].code,row['order'].cooperative.name,row['order'].kitchen.name]+[row.get(key) for key in fields] for row in rows]
         summary=[[header,totals[key]] for header,key in zip(headers,fields)]
@@ -335,7 +337,7 @@ def invoice_settings(request,kind='kms'):
             messages.success(request,'Pengaturan disimpan. Invoice yang sudah terbit tetap memakai kop, logo, dan tanda tangan sebelumnya.')
             from django.urls import reverse
             return redirect(reverse('invoice_settings',args=[kind])+(f'?partner={partner.pk}' if partner else ''))
-    return render(request,'core/invoice_settings.html',{'active':'invoice_settings','form':form,'profile':profile,'selected_partner':partner,'partners':partners,'kind':kind,'kinds':[(k,document_label(k)) for k in DOCUMENT_KINDS]})
+    return render(request,'core/invoice_settings.html',{'active':'invoice_settings','form':form,'profile':profile,'selected_partner':partner,'partners':partners,'kind':kind,'kinds':[(k,document_label(k)) for k in ACTIVE_DOCUMENT_KINDS]})
 
 
 @access
@@ -526,7 +528,7 @@ def sales_lines(request,pk):
         messages.info(request,'Isi barang dan harga beli supplier terlebih dahulu.')
         return redirect('purchase_lines',pk=pk)
     partial=request.method=='POST' and request.POST.get('action')=='back'
-    initial=[{'id':i.pk,'kms_price':i.kms_price,'cooperative_price':i.cooperative_price,'kitchen_price':i.kitchen_price} for i in items]
+    initial=[{'id':i.pk,'kms_price':i.kms_price,'cooperative_price':i.cooperative_price} for i in items]
     formset=SalesFormSet(request.POST or None,initial=initial,prefix='prices',form_kwargs={'user':request.user,'partial':partial})
     revision=RevisionForm(request.POST or None,initial={'revision':order.revision})
     if request.method=='POST' and formset.is_valid() and revision.is_valid():

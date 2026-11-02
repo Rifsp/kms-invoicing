@@ -20,7 +20,7 @@ class PartnerForm(forms.ModelForm):
 class ProcurementForm(forms.ModelForm):
     class Meta:
         model=Procurement
-        fields=['cooperative','kitchen','office_name','delivery_date','notes']
+        fields=['cooperative','kitchen','delivery_date','notes']
         labels={'cooperative':'Koperasi','kitchen':'Dapur tujuan'}
         widgets={'delivery_date':forms.DateInput(attrs={'type':'date'}),'notes':forms.Textarea(attrs={'rows':3})}
     def __init__(self,*args,**kwargs):
@@ -32,7 +32,7 @@ class ProcurementForm(forms.ModelForm):
 class ItemForm(forms.ModelForm):
     class Meta:
         model=OrderItem
-        fields=['product','supplier','quantity','supplier_price','kms_price','cooperative_price','kitchen_price','supplier_quote']
+        fields=['product','supplier','quantity','supplier_price','kms_price','cooperative_price','supplier_quote']
         labels={'product':'Barang','supplier':'Supplier'}
         widgets={'supplier_quote':forms.HiddenInput()}
     def __init__(self,*args,user,**kwargs):
@@ -44,7 +44,7 @@ class ItemForm(forms.ModelForm):
         self.fields['supplier'].widget=SearchSelect('supplier')
         self.fields['supplier'].widget.choices=self.fields['supplier'].choices
         self.fields['supplier_quote'].queryset=SupplierPrice.objects.all()
-        for key in ['supplier_price','kms_price','cooperative_price','kitchen_price','quantity']:
+        for key in ['supplier_price','kms_price','cooperative_price','quantity']:
             self.fields[key].widget.attrs.update({'min':'0.01' if key=='quantity' else '0','step':'0.01','data-calc':key})
     def clean(self):
         data = super().clean()
@@ -56,8 +56,6 @@ class ItemForm(forms.ModelForm):
                 self.add_error('supplier_price','Harga / satuan harus sama dengan penawaran yang dipilih. Simpan penawaran baru bila ada perubahan.')
             if quote.effective_date > timezone.localdate():
                 self.add_error('supplier_quote','Harga belum berlaku.')
-        if data.get('kitchen_price') is not None and data.get('cooperative_price') is not None and data['kitchen_price'] < data['cooperative_price']:
-            self.add_error('kitchen_price','Harga kantor dapur tidak boleh di bawah harga beli dapur.')
         return data
 
 class PaymentForm(forms.Form):
@@ -210,7 +208,7 @@ class PaymentReportFilterForm(ReportFilterForm):
         super().__init__(*args,**kwargs)
         self.fields['start'].label='Pembayaran dari tanggal';self.fields['end'].label='Sampai tanggal'
         kinds=INVOICE_KINDS if is_owner(user) else [k for k in INVOICE_KINDS if k!='kms']
-        self.fields['kind'].choices=[('','Semua jenis')]+[(k,Invoice.Kind(k).label) for k in kinds]
+        self.fields['kind'].choices=[('','Semua jenis')]+[(k,('Arsip lama · '+Invoice.Kind(k).label) if k=='kitchen' else Invoice.Kind(k).label) for k in kinds]
 
 class InvoiceListFilterForm(MonthFilterForm):
     q=forms.CharField(label='Cari invoice / nama mitra',required=False,max_length=100)
@@ -222,7 +220,7 @@ class InvoiceListFilterForm(MonthFilterForm):
     def __init__(self,*args,group='sales',**kwargs):
         from .models import Invoice,SALES_KINDS
         super().__init__(*args,**kwargs)
-        if group=='supplier':self.fields.pop('kind')
+        if group in ['supplier','archive']:self.fields.pop('kind')
         else:
             self.fields.pop('supplier')
             self.fields['kind'].choices=[('','Semua invoice penjualan')]+[(k,Invoice.Kind(k).label) for k in SALES_KINDS]
@@ -256,22 +254,19 @@ class SalesLineForm(forms.Form):
     id=forms.IntegerField(min_value=1,widget=forms.HiddenInput)
     kms_price=forms.DecimalField(label='KMS → Koperasi',max_digits=15,decimal_places=2,min_value=0)
     cooperative_price=forms.DecimalField(label='Koperasi → Dapur',max_digits=15,decimal_places=2,min_value=0)
-    kitchen_price=forms.DecimalField(label='Dapur → Kantor',max_digits=15,decimal_places=2,min_value=0)
     def __init__(self,*args,user,partial=False,**kwargs):
         super().__init__(*args,**kwargs);self.partial=partial
-        for name in ['kms_price','cooperative_price','kitchen_price']:
+        for name in ['kms_price','cooperative_price']:
             self.fields[name].required=not partial
             self.fields[name].widget.attrs.update({'min':0,'step':'0.01'})
         self.owner=True
     def clean(self):
         data=super().clean()
-        for name in ['kms_price','cooperative_price','kitchen_price']:
+        for name in ['kms_price','cooperative_price']:
             if data.get(name) is None and name not in self.errors:data[name]=0
         if not self.partial:
-            for name in ['cooperative_price','kitchen_price']+(['kms_price'] if self.owner else []):
+            for name in ['cooperative_price','kms_price']:
                 if name not in self.errors and data.get(name,0)<=0:self.add_error(name,'Harga harus lebih dari nol.')
-            if data.get('kitchen_price') is not None and data.get('cooperative_price') is not None and data['kitchen_price']<data['cooperative_price']:
-                self.add_error('kitchen_price','Harga kantor tidak boleh di bawah harga beli dapur.')
         return data
 
 

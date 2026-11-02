@@ -43,8 +43,6 @@ if not DEBUG:
     # lewat IP/HTTP di jaringan internal), matikan eksplisit via .env:
     #   SESSION_COOKIE_SECURE=0, CSRF_COOKIE_SECURE=0, SECURE_SSL_REDIRECT=0,
     #   SECURE_HSTS_SECONDS=0
-    # Catatan: dengan cookie tidak-Secure, kredensial dikirim tanpa enkripsi —
-    # hanya layak di jaringan tepercaya / di belakang reverse proxy TLS.
     SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', '1') == '1'
     CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', '1') == '1'
     SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', '1') == '1'

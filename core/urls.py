@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 urlpatterns = [
+ path('office-invoice-archive/',views.office_invoice_archive,name='office_invoice_archive'),
  path('transactions/<str:kind>/<int:pk>/cancel/',views.cancel_transaction,name='cancel_transaction'),
  path('orders/<int:pk>/edit/',views.order_edit,name='order_edit'),
  path('orders/<int:pk>/export/<str:format>/',views.procurement_export,name='procurement_export'),

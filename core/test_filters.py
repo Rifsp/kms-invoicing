@@ -79,7 +79,9 @@ class TransactionFilterTests(FixtureMixin,TestCase):
     def test_invoice_payment_status_sort_is_stable_and_colored(self):
         self.confirm();invoices={i.kind:i for i in self.order.invoices.all()}
         services.record_payment(self.operator,invoices['cooperative'].pk,invoices['cooperative'].total,self.today,'Lunas',uuid.uuid4())
-        services.record_payment(self.operator,invoices['kitchen'].pk,100,self.today,'Cicilan',uuid.uuid4())
+        services.record_payment(self.operator,invoices['kms'].pk,100,self.today,'Cicilan',uuid.uuid4())
+        extra=self.new_order(self.today)
+        Invoice.objects.create(procurement=extra,kind='kms',issuer_name='KMS',recipient_name='Koperasi lain',total=1000,due_date=self.today)
         page=self.client.get(reverse('invoices'),{'sort':'status'})
         self.assertEqual([i.payment_status_key for i in page.context['page']],['unpaid','partial','paid'])
         for status in ['unpaid','partial','paid']:self.assertContains(page,f'class="badge {status}"')

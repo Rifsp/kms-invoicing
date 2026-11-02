@@ -35,7 +35,7 @@ class InterfaceTests(FixtureMixin,TestCase):
         self.assertEqual([i.kind for i in page.context['page']],['supplier'])
         self.assertContains(page,supplier.code);self.assertNotContains(page,sales.code)
         page=self.client.get(reverse('invoices'))
-        self.assertEqual(set(i.kind for i in page.context['page']),{'kms','cooperative','kitchen'})
+        self.assertEqual(set(i.kind for i in page.context['page']),{'kms','cooperative'})
         self.assertNotContains(page,supplier.code)
         self.assertRedirects(self.client.get(reverse('invoices'),{'kind':'supplier'}),reverse('supplier_invoices'))
         detail=self.client.get(reverse('order_detail',args=[self.order.pk]))
@@ -87,15 +87,15 @@ class InterfaceTests(FixtureMixin,TestCase):
         keys=['prefix','number_pattern','reset','title','heading','address','bank_info','signature','footer','style','due_days']
         return {key:getattr(profile,key) for key in keys}
     def test_partner_specific_logos_three_signatures_and_immutable_print_snapshot(self):
-        base=invoice_profile('kitchen');data=self.profile_data(base)
+        base=invoice_profile('cooperative');data=self.profile_data(base)
         data.update(heading='Organisasi Dapur A',logo_left=picture('left.png',size=(300,300)),logo_right=picture('right.png',size=(300,300)))
         for i,title in enumerate(['Sekretaris','Ur. Usaha','Ketua koperasi'],1):
             data.update({f'signer_{i}_title':title,f'signer_{i}_name':f'Nama {i}',f'signer_{i}_identity':f'NRP 000{i}'})
-        url=reverse('invoice_settings',args=['kitchen'])+f'?partner={self.kitchen.pk}'
+        url=reverse('invoice_settings',args=['cooperative'])+f'?partner={self.coop.pk}'
         self.assertEqual(self.client.post(url,data).status_code,302)
-        profile=InvoiceProfile.objects.get(kind='kitchen',partner=self.kitchen)
+        profile=InvoiceProfile.objects.get(kind='cooperative',partner=self.coop)
         self.assertEqual(len(profile.signers),3);self.assertTrue(profile.logo_left)
-        self.confirm();invoice=self.order.invoices.get(kind='kitchen')
+        self.confirm();invoice=self.order.invoices.get(kind='cooperative')
         self.assertEqual(invoice.print_snapshot['heading'],'Organisasi Dapur A')
         old_logo=invoice.print_snapshot['logo_left']
         data=self.profile_data(profile);data.update(heading='Kop baru',clear_logo_left='on')

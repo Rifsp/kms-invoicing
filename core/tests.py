@@ -35,10 +35,10 @@ class BusinessTests(FixtureMixin,TestCase):
         supplier2=Partner.objects.create(name='Supplier B',kind='supplier')
         OrderItem.objects.create(procurement=self.order,product=self.product,supplier=supplier2,quantity='0.25',supplier_price='13000.02',kms_price='13500.02',cooperative_price='14000.02',kitchen_price='14500')
         self.confirm()
-        self.assertEqual(self.order.invoices.count(),5)
+        self.assertEqual(self.order.invoices.count(),4)
         self.assertEqual(self.order.invoices.filter(kind="supplier").count(),2)
         self.assertEqual(self.order.invoices.get(kind="supplier",supplier=self.supplier).total,Decimal("1300000"))
-        self.assertEqual(self.order.invoices.get(kind="kitchen").total,Decimal("1453625"))
+        self.assertFalse(self.order.invoices.filter(kind="kitchen").exists())
         self.item.refresh_from_db();self.assertEqual(self.item.product_name,'Beras')
         self.assertEqual(self.order.invoices.get(kind='kms').total,Decimal('1353375.00'))
         self.product.name='Beras diubah';self.product.save()
@@ -60,7 +60,7 @@ class BusinessTests(FixtureMixin,TestCase):
         with self.assertRaises(PermissionDenied):confirm_order(self.operator,self.order.pk)
     def test_partial_payments_for_all_three_invoices(self):
         self.confirm()
-        for kind in ['kms','cooperative','kitchen']:
+        for kind in ['kms','cooperative']:
             inv=self.order.invoices.get(kind=kind)
             self.pay(inv,'500000')
             self.assertEqual(inv.remaining,inv.total-Decimal('500000'))
@@ -68,7 +68,7 @@ class BusinessTests(FixtureMixin,TestCase):
         self.assertEqual(LedgerEntry.objects.count(),1)
     def test_overpayment_is_atomic_without_wallet_requirement(self):
         self.confirm();Wallet.objects.all().delete()
-        inv=self.order.invoices.get(kind='kitchen')
+        inv=self.order.invoices.get(kind='cooperative')
         with self.assertRaises(ValidationError):self.pay(inv,inv.total+1)
         self.assertEqual(Payment.objects.count(),0)
         self.pay(inv,inv.total)
@@ -159,7 +159,7 @@ class WorkflowTests(FixtureMixin, TestCase):
         })
         response = self.client.post(reverse('order_confirm', args=[order.pk]))
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(order.invoices.count(), 4)
+        self.assertEqual(order.invoices.count(), 3)
         invoice = order.invoices.get(kind='kms')
         self.assertEqual(invoice.total, Decimal('27000'))
         self.client.force_login(self.operator)
@@ -225,19 +225,20 @@ class PricingAndReportTests(FixtureMixin,TestCase):
         quote=SupplierPrice.objects.first()
         self.assertEqual(quote.unit,'kg');self.assertEqual(quote.created_by,self.operator)
         self.assertEqual(self.client.get(reverse('supplier_offers'),{'product':self.product.pk}).json()['offers'][0]['price'],'12000.00')
-    def test_missing_office_price_blocks_confirmation_and_rolls_back(self):
-        self.item.kitchen_price=0;self.item.save()
+    def test_missing_cooperative_price_blocks_confirmation_and_rolls_back(self):
+        self.item.cooperative_price=0;self.item.save()
         with self.assertRaises(ValidationError):self.confirm()
         self.assertEqual(Invoice.objects.count(),0)
         self.item.refresh_from_db();self.assertEqual(self.item.product_name,'')
-    def test_office_price_below_purchase_is_rejected(self):
-        self.item.kitchen_price=13000;self.item.save()
-        with self.assertRaises(ValidationError):self.confirm()
+    def test_old_office_price_is_ignored_for_new_confirmation(self):
+        self.item.kitchen_price=0;self.item.save()
+        self.confirm()
+        self.assertFalse(self.order.invoices.filter(kind='kitchen').exists())
     def test_omzet_profit_and_date_filters_use_invoice_values(self):
         self.confirm();self.client.force_login(self.owner)
         report=self.client.get(reverse('reports'))
-        self.assertEqual(report.context['totals'],{'kms_sales':Decimal('1350000'),'kms_margin':Decimal('50000'),'coop_sales':Decimal('1400000'),'coop_margin':Decimal('50000'),'kitchen_sales':Decimal('1450000'),'kitchen_margin':Decimal('50000')})
-        self.pay(self.order.invoices.get(kind='kitchen'),'10000')
+        self.assertEqual(report.context['totals'],{'kms_sales':Decimal('1350000'),'kms_margin':Decimal('50000'),'coop_sales':Decimal('1400000'),'coop_margin':Decimal('50000')})
+        self.pay(self.order.invoices.get(kind='cooperative'),'10000')
         self.assertEqual(self.client.get(reverse('reports')).context['totals'],report.context['totals'])
         empty=self.client.get(reverse('reports'),{'start':'2099-01-01'})
         self.assertEqual(empty.context['rows'],[])
@@ -265,11 +266,11 @@ class PricingAndReportTests(FixtureMixin,TestCase):
 class InvoiceNumberTests(FixtureMixin,TestCase):
     def test_number_and_print_settings_are_frozen_per_invoice(self):
         from .services import invoice_profile
-        profile=invoice_profile('kitchen');profile.prefix='DAPUR';profile.heading='Kop Dapur';profile.bank_info='Bank ABC 123';profile.style='compact';profile.save()
+        profile=invoice_profile('cooperative');profile.prefix='DAPUR';profile.heading='Kop Dapur';profile.bank_info='Bank ABC 123';profile.style='compact';profile.save()
         self.confirm()
-        inv=self.order.invoices.get(kind='kitchen')
+        inv=self.order.invoices.get(kind='cooperative')
         self.assertTrue(inv.code.startswith('DAPUR/'))
-        self.assertEqual(inv.recipient_name,'Kantor dapur')
+        self.assertEqual(inv.recipient_name,'Dapur')
         profile.heading='Kop baru';profile.prefix='BARU';profile.save()
         inv.refresh_from_db()
         self.assertEqual(inv.print_snapshot['heading'],'Kop Dapur')
@@ -284,7 +285,7 @@ class InvoiceNumberTests(FixtureMixin,TestCase):
             with self.subTest(pattern=pattern),self.assertRaises(ValidationError):profile.full_clean()
     def test_number_counter_rolls_back_if_later_invoice_profile_invalid(self):
         from .services import invoice_profile
-        profile=invoice_profile('kitchen');profile.number_pattern='{bad}';profile.save()
+        profile=invoice_profile('cooperative');profile.number_pattern='{bad}';profile.save()
         with self.assertRaises(ValidationError):self.confirm()
         self.assertEqual(Invoice.objects.count(),0)
         self.assertEqual(InvoiceCounter.objects.count(),0)
@@ -343,7 +344,7 @@ class UpgradeMigrationTests(TransactionTestCase):
             self.assertEqual(apps.get_model('core','Invoice').objects.filter(kind='kitchen').count(),0)
             self.assertTrue(apps.get_model('core','KitchenEntry').objects.filter(pk=expense.pk).exists())
         finally:
-            MigrationExecutor(connection).migrate([('core','0010_freeze_existing_procurement_reports')])
+            MigrationExecutor(connection).migrate([('core','0011_procurement_flow_version')])
 
 class FinanceTests(FixtureMixin,TestCase):
     def setUp(self):
@@ -379,7 +380,6 @@ class FinanceTests(FixtureMixin,TestCase):
         self.confirm()
         self.pay(self.order.invoices.get(kind='kms'),'200000')
         self.pay(self.order.invoices.get(kind='cooperative'),'300000')
-        self.pay(self.order.invoices.get(kind='kitchen'),'400000')
         self.assertEqual(balance(),Decimal('200000'))
         self.assertEqual(LedgerEntry.objects.count(),1)
     def test_supplier_retry_does_not_duplicate_payment_cash_or_proof(self):
@@ -498,7 +498,7 @@ class RestoreFinanceMigrationTests(TransactionTestCase):
             self.assertEqual(NewEntry.objects.count(),3)
             self.assertEqual(NewInvoice.objects.filter(kind='supplier').count(),2)
         finally:
-            MigrationExecutor(connection).migrate([('core','0010_freeze_existing_procurement_reports')])
+            MigrationExecutor(connection).migrate([('core','0011_procurement_flow_version')])
 
 class CashConcurrencyTests(FixtureMixin,TransactionTestCase):
     def test_two_supplier_payments_cannot_spend_the_same_balance(self):
